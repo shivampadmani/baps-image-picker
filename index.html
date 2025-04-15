@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BAPS Image Picker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>BAPS Image Picker</h1>
+    <input type="text" id="urlInput" placeholder="Paste BAPS News URL here">
+    <button onclick="fetchImages()">Load Images</button>
+    <div id="imageGrid"></div>
+    <div class="controls">
+      <button onclick="selectAll()">Select All on This Page</button>
+      <button onclick="downloadSelected()">Download Selected</button>
+      <button onclick="exportCSV()">Export CSV</button>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.0/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
