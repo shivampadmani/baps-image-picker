@@ -56,24 +56,17 @@
             border-radius: 4px;
             overflow: hidden;
             position: relative;
-        }
-        /* Image container with fixed aspect ratio */
-        .image-container {
-            position: relative;
-            width: 100%;
-            padding-top: 75%; /* 4:3 Aspect Ratio */
-            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 240px; /* Fixed container height to maintain grid uniformity */
         }
         .image-item img {
-            position: absolute;
-            top: 0;
-            left: 0;
             width: 100%;
-            height: 100%;
+            height: 200px;
             object-fit: contain; /* Changed from cover to contain */
-            background-color: #f0f0f0; /* Light background to see image bounds */
             cursor: pointer;
             transition: opacity 0.2s;
+            background-color: #f0f0f0; /* Light background to see image boundaries */
         }
         .image-item.selected {
             border: 3px solid #0066cc;
@@ -226,29 +219,22 @@
             color: #666;
             font-style: italic;
         }
-        /* View toggle buttons */
-        .view-toggle {
-            margin: 10px 0;
-            text-align: center;
-        }
-        .view-toggle button {
-            padding: 5px 10px;
+        .download-progress {
+            margin-top: 10px;
             background-color: #f0f0f0;
-            border: 1px solid #ddd;
             border-radius: 4px;
-            cursor: pointer;
-            margin: 0 5px;
+            overflow: hidden;
+            height: 20px;
+            display: none;
         }
-        .view-toggle button.active {
-            background-color: #0066cc;
+        .progress-bar {
+            height: 100%;
+            background-color: #4CAF50;
+            width: 0%;
+            text-align: center;
+            line-height: 20px;
             color: white;
-        }
-        /* Display mode classes */
-        .contain-mode img {
-            object-fit: contain;
-        }
-        .cover-mode img {
-            object-fit: cover;
+            font-size: 12px;
         }
         @media (max-width: 768px) {
             .image-grid {
@@ -276,7 +262,7 @@
     <div class="container">
         <h1>BAPS Image Selector Tool - Bal Prakash</h1>
         <div class="url-input">
-            <input type="text" id="url" placeholder="Enter BAPS news URL..." value="https://www.baps.org/News/2025/Pujya-Brahmavihari-Swami-of--BAPS-Hindu-Mandir-Meets-Sheikh-Abdullah-bin-Zayed-Al-Nahyan-36925.aspx">
+            <input type="text" id="url" placeholder="Enter BAPS news URL..." value="">
             <button id="fetch-btn">Fetch Images</button>
         </div>
         
@@ -288,15 +274,9 @@
         
         <div id="selected-count">Selected: 0 images</div>
         
-        <!-- Add view toggle buttons -->
-        <div class="view-toggle">
-            <button id="contain-view" class="active">Fit Images (Show Full)</button>
-            <button id="cover-view">Fill Images (Crop)</button>
-        </div>
-        
         <div id="image-container">
             <div id="no-images" class="no-images">Enter a URL and click "Fetch Images" to get started</div>
-            <div id="image-grid" class="image-grid contain-mode"></div>
+            <div id="image-grid" class="image-grid"></div>
             <div id="pagination" class="pagination"></div>
         </div>
         
@@ -305,6 +285,10 @@
             <button id="download-selected">Download Selected</button>
             <button id="copy-links">Copy Image Links</button>
             <button id="show-details">Show Selected Details</button>
+        </div>
+        
+        <div id="download-progress" class="download-progress">
+            <div id="progress-bar" class="progress-bar">0%</div>
         </div>
         
         <div id="image-details" class="image-details">
@@ -335,8 +319,8 @@
         const statusDiv = document.getElementById('status');
         const loadingDiv = document.querySelector('.loading');
         const noImagesDiv = document.getElementById('no-images');
-        const containViewBtn = document.getElementById('contain-view');
-        const coverViewBtn = document.getElementById('cover-view');
+        const downloadProgress = document.getElementById('download-progress');
+        const progressBar = document.getElementById('progress-bar');
         
         // Event listeners
         fetchBtn.addEventListener('click', fetchImages);
@@ -344,24 +328,8 @@
         downloadSelectedBtn.addEventListener('click', downloadSelected);
         copyLinksBtn.addEventListener('click', copyImageLinks);
         showDetailsBtn.addEventListener('click', toggleImageDetails);
-        containViewBtn.addEventListener('click', () => switchView('contain'));
-        coverViewBtn.addEventListener('click', () => switchView('cover'));
         
         // Functions
-        function switchView(mode) {
-            if (mode === 'contain') {
-                imageGrid.classList.add('contain-mode');
-                imageGrid.classList.remove('cover-mode');
-                containViewBtn.classList.add('active');
-                coverViewBtn.classList.remove('active');
-            } else {
-                imageGrid.classList.add('cover-mode');
-                imageGrid.classList.remove('contain-mode');
-                coverViewBtn.classList.add('active');
-                containViewBtn.classList.remove('active');
-            }
-        }
-        
         async function fetchImages() {
             const url = urlInput.value.trim();
             
@@ -391,14 +359,12 @@
                 const doc = parser.parseFromString(html, 'text/html');
                 
                 // Find all anchor elements that contain images (specific to BAPS website structure)
-                const anchors = doc.querySelectorAll('a.highslide--');
+                let anchors = doc.querySelectorAll('a.highslide--');
                 
                 if (anchors.length === 0) {
                     // Try alternative structure - any anchor with "highslide" in the class
-                    const altAnchors = doc.querySelectorAll('a[class*="highslide"]');
-                    if (altAnchors.length > 0) {
-                        processAnchors(altAnchors, url);
-                    } else {
+                    anchors = doc.querySelectorAll('a[class*="highslide"]');
+                    if (anchors.length === 0) {
                         // Last resort - try finding all images
                         const imgElements = doc.querySelectorAll('img.img-fluid');
                         if (imgElements.length > 0) {
@@ -407,6 +373,8 @@
                             noImagesDiv.textContent = 'No images found on this page. Make sure the URL is correct.';
                             noImagesDiv.style.display = 'block';
                         }
+                    } else {
+                        processAnchors(anchors, url);
                     }
                 } else {
                     processAnchors(anchors, url);
@@ -464,6 +432,10 @@
                         caption = img.getAttribute('alt') || img.getAttribute('title') || '';
                     }
                     
+                    // Extract filename from URL
+                    const urlObject = new URL(href || src);
+                    const filename = urlObject.pathname.split('/').pop() || 'image.jpg';
+                    
                     // Add to our collection
                     allImages.push({
                         src: src,
@@ -471,6 +443,7 @@
                         alt: img.getAttribute('alt') || 'Image',
                         title: img.getAttribute('title') || '',
                         caption: caption,
+                        filename: filename,
                         selected: false
                     });
                 }
@@ -499,6 +472,10 @@
                     caption = img.getAttribute('alt') || img.getAttribute('title') || '';
                 }
                 
+                // Extract filename from URL
+                const urlObject = new URL(src);
+                const filename = urlObject.pathname.split('/').pop() || 'image.jpg';
+                
                 // Add to our collection
                 allImages.push({
                     src: src,
@@ -506,6 +483,7 @@
                     alt: img.getAttribute('alt') || 'Image',
                     title: img.getAttribute('title') || '',
                     caption: caption,
+                    filename: filename,
                     selected: false
                 });
             }
@@ -527,14 +505,23 @@
                     imageItem.classList.add('selected');
                 }
                 
-                // Create container for fixed aspect ratio
-                const imageContainer = document.createElement('div');
-                imageContainer.className = 'image-container';
-                
                 const img = document.createElement('img');
                 img.src = image.src;
                 img.alt = image.alt;
                 img.loading = 'lazy';
+                
+                // Add image loading handler
+                img.onload = function() {
+                    // This will ensure the proper display of both horizontal and vertical images
+                    if (this.naturalWidth > this.naturalHeight) {
+                        // For horizontal images
+                        this.style.objectFit = 'contain';
+                    } else {
+                        // For vertical images
+                        this.style.objectFit = 'contain';
+                    }
+                };
+                
                 img.onerror = function() {
                     this.onerror = null;
                     this.src = '/api/placeholder/400/320';
@@ -548,7 +535,7 @@
                 
                 const caption = document.createElement('div');
                 caption.className = 'image-caption';
-                caption.textContent = image.caption || image.alt;
+                caption.textContent = image.caption || image.filename;
                 
                 // Add event listeners
                 imageItem.addEventListener('click', () => toggleImageSelection(i, checkbox));
@@ -557,19 +544,7 @@
                     toggleImageSelection(i, checkbox);
                 });
                 
-                // Try to pre-determine if image is portrait or landscape
-                const tempImg = new Image();
-                tempImg.onload = function() {
-                    // Adjust container padding-top based on actual image dimensions
-                    const aspectRatio = (this.height / this.width) * 100;
-                    if (aspectRatio > 100) { // Portrait image
-                        imageContainer.style.paddingTop = '130%'; // Taller aspect ratio for portraits
-                    }
-                };
-                tempImg.src = image.src;
-                
-                imageContainer.appendChild(img);
-                imageItem.appendChild(imageContainer);
+                imageItem.appendChild(img);
                 imageItem.appendChild(checkbox);
                 imageItem.appendChild(caption);
                 imageGrid.appendChild(imageItem);
@@ -678,32 +653,66 @@
             showStatus('Preparing download...', 'success');
             
             try {
-                for (const index of selectedImages) {
+                // Create a zip file using JSZip
+                // Since we can't import external libraries, we'll use a different approach
+                // We'll download images one by one using the fetch API
+                
+                const selectedIndices = Array.from(selectedImages);
+                downloadProgress.style.display = 'block';
+                
+                for (let i = 0; i < selectedIndices.length; i++) {
+                    const index = selectedIndices[i];
                     const image = allImages[index];
-                    
-                    // Use the href (full size image) for download
                     const sourceUrl = image.href || image.src;
                     
-                    // Create a temporary link element
-                    const link = document.createElement('a');
-                    link.href = sourceUrl;
+                    // Update progress
+                    const progress = Math.round((i / selectedIndices.length) * 100);
+                    progressBar.style.width = progress + '%';
+                    progressBar.textContent = progress + '%';
                     
-                    // Extract filename from URL
-                    const url = new URL(sourceUrl);
-                    const filename = url.pathname.split('/').pop() || 'image.jpg';
-                    
-                    link.download = filename;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    
-                    // Small delay between downloads to prevent browser issues
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    try {
+                        // Fetch the image
+                        const response = await fetch(sourceUrl);
+                        const blob = await response.blob();
+                        
+                        // Create download link
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.style.display = 'none';
+                        a.href = url;
+                        
+                        // Use the filename from the image data
+                        a.download = image.filename;
+                        
+                        // Append to the document and click
+                        document.body.appendChild(a);
+                        a.click();
+                        
+                        // Clean up
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        
+                        // Small delay between downloads
+                        await new Promise(r => setTimeout(r, 500));
+                    } catch (error) {
+                        console.error(`Error downloading ${image.filename}:`, error);
+                    }
                 }
                 
-                showStatus(`Successfully initiated download of ${selectedImages.size} images`, 'success');
+                // Complete progress
+                progressBar.style.width = '100%';
+                progressBar.textContent = '100%';
+                
+                showStatus(`Successfully downloaded ${selectedIndices.length} images`, 'success');
+                
+                // Hide progress after a delay
+                setTimeout(() => {
+                    downloadProgress.style.display = 'none';
+                }, 3000);
+                
             } catch (error) {
                 showStatus('Error downloading images: ' + error.message, 'error');
+                downloadProgress.style.display = 'none';
             }
         }
         
@@ -754,16 +763,11 @@
                 const thumbnailImg = document.createElement('img');
                 thumbnailImg.src = image.src;
                 thumbnailImg.alt = image.alt;
-                thumbnailImg.style.objectFit = 'contain'; // Always show full image in details
-                
-                // Extract filename from URL
-                const url = new URL(image.href || image.src);
-                const filename = url.pathname.split('/').pop() || 'image.jpg';
                 
                 const filenameDiv = document.createElement('div');
                 filenameDiv.style.fontWeight = 'bold';
                 filenameDiv.style.marginTop = '5px';
-                filenameDiv.textContent = filename;
+                filenameDiv.textContent = image.filename;
                 
                 const urlDiv = document.createElement('div');
                 urlDiv.style.display = 'flex';
@@ -820,6 +824,7 @@
             pagination.innerHTML = '';
             imageDetails.style.display = 'none';
             updateSelectedCount();
+            downloadProgress.style.display = 'none';
         }
         
         function showLoading(show) {
