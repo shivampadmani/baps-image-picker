@@ -1,4 +1,4 @@
-# BAPS Image Selector Tool - Bal Prakash
+# BAPS Website Image Selector Tool 
 
 ## Overview
 This tool allows users to easily extract, view, select, and download images from BAPS news and vicharan photos webpages.
