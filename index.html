@@ -58,15 +58,15 @@
             position: relative;
             display: flex;
             flex-direction: column;
-            height: 240px; /* Fixed container height to maintain grid uniformity */
+            height: 240px;
         }
         .image-item img {
             width: 100%;
             height: 200px;
-            object-fit: contain; /* Changed from cover to contain */
+            object-fit: contain;
             cursor: pointer;
             transition: opacity 0.2s;
-            background-color: #f0f0f0; /* Light background to see image boundaries */
+            background-color: #f0f0f0;
         }
         .image-item.selected {
             border: 3px solid #0066cc;
@@ -236,6 +236,25 @@
             color: white;
             font-size: 12px;
         }
+        .debug-info {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            display: none;
+        }
+        .debug-info h4 {
+            margin-top: 0;
+            color: #495057;
+        }
+        .debug-info pre {
+            background-color: #e9ecef;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
         @media (max-width: 768px) {
             .image-grid {
                 grid-template-columns: repeat(2, 1fr);
@@ -285,6 +304,7 @@
             <button id="download-selected">Download Selected</button>
             <button id="copy-links">Copy Image Links</button>
             <button id="show-details">Show Selected Details</button>
+            <button id="debug-toggle">Show Debug Info</button>
         </div>
         
         <div id="download-progress" class="download-progress">
@@ -295,6 +315,11 @@
             <h3>Selected Images Details</h3>
             <div id="image-details-content" class="image-details-content"></div>
         </div>
+        
+        <div id="debug-info" class="debug-info">
+            <h4>Debug Information</h4>
+            <div id="debug-content"></div>
+        </div>
     </div>
 
     <script>
@@ -303,6 +328,7 @@
         let selectedImages = new Set();
         let currentPage = 1;
         const imagesPerPage = 16;
+        let debugInfo = '';
         
         // DOM Elements
         const urlInput = document.getElementById('url');
@@ -313,6 +339,7 @@
         const downloadSelectedBtn = document.getElementById('download-selected');
         const copyLinksBtn = document.getElementById('copy-links');
         const showDetailsBtn = document.getElementById('show-details');
+        const debugToggleBtn = document.getElementById('debug-toggle');
         const selectedCount = document.getElementById('selected-count');
         const imageDetails = document.getElementById('image-details');
         const imageDetailsContent = document.getElementById('image-details-content');
@@ -321,6 +348,8 @@
         const noImagesDiv = document.getElementById('no-images');
         const downloadProgress = document.getElementById('download-progress');
         const progressBar = document.getElementById('progress-bar');
+        const debugInfoDiv = document.getElementById('debug-info');
+        const debugContentDiv = document.getElementById('debug-content');
         
         // Event listeners
         fetchBtn.addEventListener('click', fetchImages);
@@ -328,6 +357,7 @@
         downloadSelectedBtn.addEventListener('click', downloadSelected);
         copyLinksBtn.addEventListener('click', copyImageLinks);
         showDetailsBtn.addEventListener('click', toggleImageDetails);
+        debugToggleBtn.addEventListener('click', toggleDebugInfo);
         
         // Functions
         async function fetchImages() {
@@ -341,6 +371,7 @@
             showLoading(true);
             clearImages();
             hideStatus();
+            debugInfo = '';
             
             try {
                 // Create a proxy URL to bypass CORS
@@ -354,51 +385,100 @@
                 const data = await response.json();
                 const html = data.contents;
                 
+                debugInfo += `Fetched HTML content length: ${html.length} characters\n\n`;
+                
                 // Extract images from HTML
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(html, 'text/html');
                 
-                // Find all anchor elements that contain images (specific to BAPS website structure)
-                let anchors = doc.querySelectorAll('a.highslide--');
+                // Updated selectors based on the actual HTML structure
+                let anchors = [];
+                let foundMethod = '';
                 
-                if (anchors.length === 0) {
-                    // Try alternative structure - any anchor with "highslide" in the class
-                    anchors = doc.querySelectorAll('a[class*="highslide"]');
-                    if (anchors.length === 0) {
-                        // Last resort - try finding all images
+                // Method 1: Look for anchors with class containing "highslide"
+                anchors = doc.querySelectorAll('a[class*="highslide"]');
+                if (anchors.length > 0) {
+                    foundMethod = 'anchors with highslide class';
+                    debugInfo += `Found ${anchors.length} anchors with highslide class\n`;
+                } else {
+                    // Method 2: Look for anchors with onclick containing "hs.expand"
+                    anchors = doc.querySelectorAll('a[onclick*="hs.expand"]');
+                    if (anchors.length > 0) {
+                        foundMethod = 'anchors with hs.expand onclick';
+                        debugInfo += `Found ${anchors.length} anchors with hs.expand onclick\n`;
+                    } else {
+                        // Method 3: Look for anchors containing images with class "img-fluid"
                         const imgElements = doc.querySelectorAll('img.img-fluid');
                         if (imgElements.length > 0) {
-                            processImages(imgElements, url);
+                            foundMethod = 'img-fluid images';
+                            debugInfo += `Found ${imgElements.length} img-fluid images\n`;
+                            anchors = [];
+                            imgElements.forEach(img => {
+                                const parentAnchor = img.closest('a');
+                                if (parentAnchor) {
+                                    anchors.push(parentAnchor);
+                                }
+                            });
+                            if (anchors.length === 0) {
+                                processImagesDirectly(imgElements, url);
+                            }
                         } else {
-                            noImagesDiv.textContent = 'No images found on this page. Make sure the URL is correct.';
-                            noImagesDiv.style.display = 'block';
+                            // Method 4: Look for any images in the gallery structure
+                            const galleryImages = doc.querySelectorAll('img[src*="GalleryImages"]');
+                            if (galleryImages.length > 0) {
+                                foundMethod = 'gallery images';
+                                debugInfo += `Found ${galleryImages.length} gallery images\n`;
+                                processImagesDirectly(galleryImages, url);
+                            }
                         }
-                    } else {
-                        processAnchors(anchors, url);
                     }
-                } else {
+                }
+                
+                if (anchors.length > 0) {
+                    debugInfo += `Processing ${anchors.length} anchors using method: ${foundMethod}\n`;
                     processAnchors(anchors, url);
                 }
                 
                 if (allImages.length === 0) {
-                    noImagesDiv.textContent = 'No images found on this page';
+                    debugInfo += 'No images found. Trying alternative methods...\n';
+                    
+                    // Last resort: find all images and try to construct proper URLs
+                    const allImgs = doc.querySelectorAll('img');
+                    debugInfo += `Found ${allImgs.length} total img elements\n`;
+                    
+                    if (allImgs.length > 0) {
+                        processImagesDirectly(allImgs, url);
+                    }
+                }
+                
+                if (allImages.length === 0) {
+                    noImagesDiv.textContent = 'No images found on this page. Check debug info for details.';
                     noImagesDiv.style.display = 'block';
+                    debugInfo += 'Final result: No images found\n';
                 } else {
                     noImagesDiv.style.display = 'none';
                     displayImages(1);
                     showStatus(`Found ${allImages.length} images on the page`, 'success');
+                    debugInfo += `Successfully processed ${allImages.length} images\n`;
                 }
+                
             } catch (error) {
                 showStatus(`Error: ${error.message}`, 'error');
+                debugInfo += `Error: ${error.message}\n`;
                 console.error('Error fetching images:', error);
             } finally {
                 showLoading(false);
+                updateDebugInfo();
             }
         }
         
         function processAnchors(anchors, baseUrl) {
             allImages = [];
-            for (const anchor of anchors) {
+            debugInfo += '\nProcessing anchors:\n';
+            
+            for (let i = 0; i < anchors.length; i++) {
+                const anchor = anchors[i];
+                
                 // Get href (full size image)
                 let href = anchor.getAttribute('href');
                 
@@ -423,21 +503,28 @@
                             : `${urlObj.protocol}//${urlObj.host}${urlObj.pathname.substring(0, urlObj.pathname.lastIndexOf('/') + 1)}${src}`;
                     }
                     
-                    // Get caption if available
+                    // Get caption from multiple possible sources
                     let caption = '';
-                    const captionElement = anchor.parentElement.querySelector('.description');
-                    if (captionElement) {
-                        caption = captionElement.textContent.trim();
+                    
+                    // Try to find description div (sibling or parent)
+                    const descriptionElement = anchor.parentElement.querySelector('.description') ||
+                                             anchor.parentElement.parentElement.querySelector('.description') ||
+                                             anchor.nextElementSibling;
+                    
+                    if (descriptionElement && descriptionElement.classList.contains('description')) {
+                        caption = descriptionElement.textContent.trim();
+                    } else if (descriptionElement && descriptionElement.textContent) {
+                        caption = descriptionElement.textContent.trim();
                     } else {
                         caption = img.getAttribute('alt') || img.getAttribute('title') || '';
                     }
                     
                     // Extract filename from URL
                     const urlObject = new URL(href || src);
-                    const filename = urlObject.pathname.split('/').pop() || 'image.jpg';
+                    const filename = urlObject.pathname.split('/').pop() || `image_${i + 1}.jpg`;
                     
                     // Add to our collection
-                    allImages.push({
+                    const imageObj = {
                         src: src,
                         href: href || src,
                         alt: img.getAttribute('alt') || 'Image',
@@ -445,15 +532,29 @@
                         caption: caption,
                         filename: filename,
                         selected: false
-                    });
+                    };
+                    
+                    allImages.push(imageObj);
+                    debugInfo += `  ${i + 1}. ${filename} - ${caption.substring(0, 50)}${caption.length > 50 ? '...' : ''}\n`;
                 }
             }
         }
         
-        function processImages(images, baseUrl) {
+        function processImagesDirectly(images, baseUrl) {
+            if (allImages.length > 0) return; // Don't overwrite if we already have images
+            
             allImages = [];
-            for (const img of images) {
+            debugInfo += '\nProcessing images directly:\n';
+            
+            for (let i = 0; i < images.length; i++) {
+                const img = images[i];
                 let src = img.getAttribute('src');
+                
+                // Skip small images, icons, and non-gallery images
+                if (src && (src.includes('icon') || src.includes('logo') || src.includes('button') || 
+                           src.includes('bg') || src.includes('spacer') || src.includes('pixel'))) {
+                    continue;
+                }
                 
                 // Handle relative URLs
                 if (src && !src.startsWith('http')) {
@@ -463,29 +564,43 @@
                         : `${urlObj.protocol}//${urlObj.host}${urlObj.pathname.substring(0, urlObj.pathname.lastIndexOf('/') + 1)}${src}`;
                 }
                 
-                // Get caption if available
+                // Get caption from multiple possible sources
                 let caption = '';
-                const captionElement = img.parentElement.parentElement.querySelector('.description');
-                if (captionElement) {
-                    caption = captionElement.textContent.trim();
+                
+                // Look for description div in various locations
+                const parentElement = img.parentElement;
+                const grandParentElement = parentElement ? parentElement.parentElement : null;
+                
+                const descriptionElement = parentElement.querySelector('.description') ||
+                                         grandParentElement.querySelector('.description') ||
+                                         img.nextElementSibling ||
+                                         parentElement.nextElementSibling;
+                
+                if (descriptionElement && descriptionElement.classList.contains('description')) {
+                    caption = descriptionElement.textContent.trim();
+                } else if (descriptionElement && descriptionElement.textContent) {
+                    caption = descriptionElement.textContent.trim();
                 } else {
                     caption = img.getAttribute('alt') || img.getAttribute('title') || '';
                 }
                 
                 // Extract filename from URL
                 const urlObject = new URL(src);
-                const filename = urlObject.pathname.split('/').pop() || 'image.jpg';
+                const filename = urlObject.pathname.split('/').pop() || `image_${i + 1}.jpg`;
                 
                 // Add to our collection
-                allImages.push({
+                const imageObj = {
                     src: src,
-                    href: src,
+                    href: src, // Use src as href for direct images
                     alt: img.getAttribute('alt') || 'Image',
                     title: img.getAttribute('title') || '',
                     caption: caption,
                     filename: filename,
                     selected: false
-                });
+                };
+                
+                allImages.push(imageObj);
+                debugInfo += `  ${allImages.length}. ${filename} - ${caption.substring(0, 50)}${caption.length > 50 ? '...' : ''}\n`;
             }
         }
         
@@ -510,22 +625,16 @@
                 img.alt = image.alt;
                 img.loading = 'lazy';
                 
-                // Add image loading handler
                 img.onload = function() {
-                    // This will ensure the proper display of both horizontal and vertical images
-                    if (this.naturalWidth > this.naturalHeight) {
-                        // For horizontal images
-                        this.style.objectFit = 'contain';
-                    } else {
-                        // For vertical images
-                        this.style.objectFit = 'contain';
-                    }
+                    this.style.objectFit = 'contain';
                 };
                 
                 img.onerror = function() {
                     this.onerror = null;
-                    this.src = '/api/placeholder/400/320';
+                    this.style.backgroundColor = '#f8f9fa';
+                    this.style.border = '1px dashed #dee2e6';
                     this.alt = 'Failed to load image';
+                    this.title = 'Image failed to load: ' + image.src;
                 };
                 
                 const checkbox = document.createElement('input');
@@ -536,6 +645,7 @@
                 const caption = document.createElement('div');
                 caption.className = 'image-caption';
                 caption.textContent = image.caption || image.filename;
+                caption.title = image.caption || image.filename; // Full text on hover
                 
                 // Add event listeners
                 imageItem.addEventListener('click', () => toggleImageSelection(i, checkbox));
@@ -653,10 +763,6 @@
             showStatus('Preparing download...', 'success');
             
             try {
-                // Create a zip file using JSZip
-                // Since we can't import external libraries, we'll use a different approach
-                // We'll download images one by one using the fetch API
-                
                 const selectedIndices = Array.from(selectedImages);
                 downloadProgress.style.display = 'block';
                 
@@ -671,31 +777,28 @@
                     progressBar.textContent = progress + '%';
                     
                     try {
-                        // Fetch the image
-                        const response = await fetch(sourceUrl);
-                        const blob = await response.blob();
+                        // Try to download the image
+                        const response = await fetch(sourceUrl, { mode: 'no-cors' });
                         
                         // Create download link
-                        const url = window.URL.createObjectURL(blob);
                         const a = document.createElement('a');
                         a.style.display = 'none';
-                        a.href = url;
-                        
-                        // Use the filename from the image data
+                        a.href = sourceUrl;
                         a.download = image.filename;
+                        a.target = '_blank';
                         
                         // Append to the document and click
                         document.body.appendChild(a);
                         a.click();
                         
                         // Clean up
-                        window.URL.revokeObjectURL(url);
                         document.body.removeChild(a);
                         
                         // Small delay between downloads
                         await new Promise(r => setTimeout(r, 500));
                     } catch (error) {
                         console.error(`Error downloading ${image.filename}:`, error);
+                        // Continue with next image
                     }
                 }
                 
@@ -703,7 +806,7 @@
                 progressBar.style.width = '100%';
                 progressBar.textContent = '100%';
                 
-                showStatus(`Successfully downloaded ${selectedIndices.length} images`, 'success');
+                showStatus(`Initiated download for ${selectedIndices.length} images`, 'success');
                 
                 // Hide progress after a delay
                 setTimeout(() => {
@@ -751,106 +854,5 @@
             }
         }
         
-        function displayImageDetails() {
-            imageDetailsContent.innerHTML = '';
-            
-            Array.from(selectedImages).sort((a, b) => a - b).forEach(index => {
-                const image = allImages[index];
-                
-                const detailItem = document.createElement('div');
-                detailItem.className = 'detail-item';
-                
-                const thumbnailImg = document.createElement('img');
-                thumbnailImg.src = image.src;
-                thumbnailImg.alt = image.alt;
-                
-                const filenameDiv = document.createElement('div');
-                filenameDiv.style.fontWeight = 'bold';
-                filenameDiv.style.marginTop = '5px';
-                filenameDiv.textContent = image.filename;
-                
-                const urlDiv = document.createElement('div');
-                urlDiv.style.display = 'flex';
-                urlDiv.style.alignItems = 'center';
-                urlDiv.style.marginTop = '5px';
-                
-                const urlText = document.createElement('input');
-                urlText.type = 'text';
-                urlText.value = image.href || image.src;
-                urlText.style.width = '100%';
-                urlText.style.padding = '5px';
-                urlText.readOnly = true;
-                
-                const copyBtn = document.createElement('button');
-                copyBtn.className = 'copy-btn';
-                copyBtn.textContent = 'Copy';
-                copyBtn.onclick = function() {
-                    navigator.clipboard.writeText(image.href || image.src)
-                        .then(() => {
-                            copyBtn.textContent = 'Copied!';
-                            setTimeout(() => {
-                                copyBtn.textContent = 'Copy';
-                            }, 2000);
-                        });
-                };
-                
-                urlDiv.appendChild(urlText);
-                urlDiv.appendChild(copyBtn);
-                
-                detailItem.appendChild(thumbnailImg);
-                detailItem.appendChild(filenameDiv);
-                detailItem.appendChild(urlDiv);
-                
-                if (image.caption) {
-                    const captionDiv = document.createElement('div');
-                    captionDiv.style.marginTop = '5px';
-                    captionDiv.style.fontStyle = 'italic';
-                    captionDiv.textContent = image.caption;
-                    detailItem.appendChild(captionDiv);
-                }
-                
-                imageDetailsContent.appendChild(detailItem);
-            });
-        }
-        
-        function updateSelectedCount() {
-            selectedCount.textContent = `Selected: ${selectedImages.size} ${selectedImages.size === 1 ? 'image' : 'images'}`;
-        }
-        
-        function clearImages() {
-            allImages = [];
-            selectedImages.clear();
-            imageGrid.innerHTML = '';
-            pagination.innerHTML = '';
-            imageDetails.style.display = 'none';
-            updateSelectedCount();
-            downloadProgress.style.display = 'none';
-        }
-        
-        function showLoading(show) {
-            loadingDiv.style.display = show ? 'block' : 'none';
-        }
-        
-        function showStatus(message, type) {
-            statusDiv.textContent = message;
-            statusDiv.className = 'status ' + type;
-            
-            // Auto-hide after 5 seconds
-            setTimeout(() => {
-                statusDiv.style.display = 'none';
-            }, 5000);
-        }
-        
-        function hideStatus() {
-            statusDiv.style.display = 'none';
-        }
-        
-        // Add support for Enter key in URL input
-        urlInput.addEventListener('keyup', function(event) {
-            if (event.key === 'Enter') {
-                fetchImages();
-            }
-        });
-    </script>
-</body>
-</html>
+        function toggleDebugInfo() {
+            if (debugInfoDiv.style.display ===
